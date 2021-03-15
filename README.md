@@ -1,6 +1,6 @@
 # Meme Stock Profit Targeter
 
-MSPT is a command line tool for critical space mission preparation.
+MSPT is a command line tool for critical space mission preparation. It uses [Open Exchance Rates API](https://openexchangerates.org) to fetch the USD/EUR rate. You can create an free account for limited usage [here](https://openexchangerates.org/signup/free).
 
 ## Installation
 
@@ -17,7 +17,16 @@ python venv -m <venv-name>
 ```
 pip install -r freeze.txt
 ```
-
+5. Create `.env` file to project root and add your personal `app_id`:
+```
+app_id = <copy your OER app id here>
+```
+6. Adjust variables to fit your needs in `const.py`
+```python
+TAX_RATE = 30
+ADDITIONAL_WITHHOLD = 10
+DB_FILENAME = 'db.sqlite'
+```
 
 ## Usage
 
