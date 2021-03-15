@@ -32,6 +32,8 @@ class OERApi:
 
 
 class ProfitTargeter:
+  # Targets: id, name, base_value, target_value
+  # Rates: id, date, eur, usd, gbp
   db_connection = None
   db_cursor = None
   api = None
@@ -43,7 +45,7 @@ class ProfitTargeter:
     self.api = OERApi()
 
     try:
-      self.opts, self.args = getopt.getopt(argv, 'hpacr', ['help, print, add, calc, reset'])
+      self.opts, self.args = getopt.getopt(argv, 'hpacri', ['help, print, add, calc, reset, info'])
     except getopt.GetoptError:
       print('main.py <-h --help> <-p --print> <-a --add> <-c --calc')
       sys.exit(2)
@@ -91,24 +93,42 @@ class ProfitTargeter:
   def print_report(self):
     q = self.db_cursor.execute('SELECT * FROM targets')
     data = q.fetchall()
+    data.append(('', 'TOTAL', sum([x[2] for x in data]), sum([x[3] for x in data])))
     print(tabulate(data, headers=['id', 'Name', 'Base value (€)', 'Target value ($)']))
 
   def run(self):
-    #self.db_cursor.execute('CREATE TABLE rates (id INT AUTO INCREMENT PRIMARY KEY, date TEXT, eur FLOAT, usd FLOAT, gbp FLOAT)')
-    
+
     for opt, arg in self.opts:
       if opt in ['-h', '--help']:
         print('main.py <-h --help> <-p --print> <-a --add name value')
         sys.exit(2)
+
       elif opt in ['-p', '--print']:
         self.print_report()
         sys.exit()
+
       elif opt in ['-c', '--calc']:
-        print(self.calculate_target(100, 0.84))
+        if (not len(self.args) == 2):
+          print('main.py <-c --calc> base_value target_rate')
+          sys.exit(2)
+        print(self.calculate_target(float(self.args[0]), float(self.args[1])))
+
       elif opt in ['-r', '--reset']:
         self.db_cursor.execute('DROP TABLE targets')
         self.db_connection.commit()
         self.create_target_table()
+
+      elif opt in ['-i', '--info']:
+        print('Active coefficients:')
+        if CONSTANTS.TAX_RATE:
+          print('TAX RATE: {:.2f}%'.format(float(CONSTANTS.TAX_RATE)))
+        if CONSTANTS.ADDITIONAL_WITHHOLD:
+          print('ADDITIONAL WITHHOLD: {:.2f}%'.format(float(CONSTANTS.ADDITIONAL_WITHHOLD)))
+        today = datetime.date.today()
+        usd_eur_today = self.get_usd_eur_by_date(today)
+        if usd_eur_today:
+          print('USD/EUR ({}): {:.2f}'.format(today, usd_eur_today[0]))
+
       elif opt in ['-a', '--add']:
         # If not enough args provided, exit with error message
         if (len(self.args) < 2):
