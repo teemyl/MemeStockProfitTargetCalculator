@@ -1,6 +1,6 @@
-# Meme Stock Profit Targeter
+# Meme Stock Profit Target Calculator
 
-MSPT is a command line tool for critical space mission preparation. It uses [Open Exchance Rates API](https://openexchangerates.org) to fetch the USD/EUR rate. You can create an free account for limited usage [here](https://openexchangerates.org/signup/free).
+MSPTC is a command line tool for critical space mission preparation. Displays the amount you have to gain to achieve targeted net value after taxes and other withholdings. It uses [Open Exchance Rates API](https://openexchangerates.org) to fetch the USD/EUR rate. You can create an free account for limited usage [here](https://openexchangerates.org/signup/free).
 
 ## Installation
 

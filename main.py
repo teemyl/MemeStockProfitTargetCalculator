@@ -31,7 +31,7 @@ class OERApi:
     return self._get(url)
 
 
-class ProfitTargeter:
+class ProfitTargetCalculator:
   # Targets: id, name, base_value, target_value
   # Rates: id, date, eur, usd, gbp
   db_connection = None
@@ -45,9 +45,10 @@ class ProfitTargeter:
     self.api = OERApi()
 
     try:
-      self.opts, self.args = getopt.getopt(argv, 'hpacri', ['help, print, add, calc, reset, info'])
-    except getopt.GetoptError:
-      print('main.py <-h --help> <-p --print> <-a --add> <-c --calc')
+      self.opts, self.args = getopt.getopt(argv, 'hpacri', ['help', 'print', 'add', 'calc', 'reset', 'info'])
+    except getopt.GetoptError as e:
+      print(e)
+      print('main.py <-h --help> <-p --print> <-a --add> <-c --calc>')
       sys.exit(2)
 
   def __del__(self):
@@ -155,5 +156,5 @@ class ProfitTargeter:
       self.db_connection.commit()
 
 if __name__ == "__main__":
-  gme = ProfitTargeter(sys.argv[1:])
-  gme.run()
+  ptc = ProfitTargetCalculator(sys.argv[1:])
+  ptc.run()
