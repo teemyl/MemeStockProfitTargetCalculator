@@ -10,6 +10,68 @@ from tabulate import tabulate
 import settings
 from const import CONSTANTS
 
+class DBConnection:
+
+  def __init__(self):
+    self.sqlite3_filename = CONSTANTS.DB_FILENAME
+    self.connection = self.connect()
+    self.cursor = self.connection.cursor()
+    # Sketchy to init every time, should probably check first if old db exists
+    self.init_tables()
+
+  def __del__(self):
+    try:
+      self.cursor.close()
+      self.connection.close()
+    except:
+      pass
+
+  def connect(self):
+    try:
+      return sqlite3.connect(self.sqlite3_filename)
+    except sqlite3.Error as e:
+      print('Database connection error: {}. Exiting...'.format(str(e)))
+      sys.exit(2)
+  
+  def init_tables(self):
+    try:
+      self.cursor.execute('CREATE TABLE targets (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, base_value FLOAT, target_value FLOAT)')
+    except:
+      pass
+
+    try:
+      self.cursor.execute('CREATE TABLE rates (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT, eur FLOAT, usd FLOAT, gbp FLOAT)')
+    except:
+      pass
+
+    self.connection.commit()
+
+  def reset(self):
+    self.cursor.execute('DROP TABLE targets')
+    self.cursor.execute('DROP TABLE rates')
+    self.init_tables()
+
+  def update_rates(self, latest):
+    today = datetime.date.today()
+    self.cursor.execute(
+      'INSERT INTO rates (date, eur, usd, gbp) VALUES (?, ?, ?, ?)',
+      (today, latest['rates']['EUR'], float(1), latest['rates']['GBP'])
+    )
+    self.connection.commit()
+
+  def update_targets(self, name, base_value, target_value):
+    self.cursor.execute(
+      'INSERT INTO targets (name,base_value,target_value) VALUES (?,?,?)',
+      (name, base_value, target_value)
+    )
+    self.connection.commit()
+
+  def get_targets(self):
+    return self.cursor.execute('SELECT id, name, ROUND(base_value, 2), ROUND(target_value, 2) FROM targets').fetchall()
+
+  def get_usd_eur_by_date(self, date):
+    return self.cursor.execute('SELECT eur FROM rates WHERE date=?', (date,)).fetchone()
+
 class OERApi:
   app_id = None
   base_url = None
@@ -34,14 +96,12 @@ class OERApi:
 class ProfitTargetCalculator:
   # Targets: id, name, base_value, target_value
   # Rates: id, date, eur, usd, gbp
-  db_connection = None
-  db_cursor = None
+  db = None
   api = None
   opts = args = None
 
   def __init__(self, argv):
-    self.db_connection = sqlite3.connect(CONSTANTS.DB_FILENAME)
-    self.db_cursor = self.db_connection.cursor()
+    self.db = DBConnection()
     self.api = OERApi()
 
     try:
@@ -52,8 +112,11 @@ class ProfitTargetCalculator:
       sys.exit(2)
 
   def __del__(self):
-    if self.db_connection:
-      self.db_connection.close()
+    try:
+      self.api.delete()
+      self.db.delete()
+    except:
+      pass
 
   def calculate_target(self, base_value, target_rate):
     base_with_additional = \
@@ -72,33 +135,17 @@ class ProfitTargetCalculator:
     latest = self.api.get_latest()
     
     if 'rates' in latest:
-      today = datetime.date.today()
-
-      self.db_cursor.execute(
-        'INSERT INTO rates (date, eur, usd, gbp) VALUES (?, ?, ?, ?)',
-        (today, latest['rates']['EUR'], float(1), latest['rates']['GBP'])
-      )
-      
-      self.db_connection.commit()
-
+      self.db.update_rates(latest)
     else:
       return None
 
-  def get_usd_eur_by_date(self, date):
-    query = self.db_cursor.execute('SELECT eur FROM rates WHERE date=?', (date,))
-    return query.fetchone()
-
-  def create_target_table(self):
-    self.db_cursor.execute('CREATE TABLE targets (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, base_value FLOAT, target_value FLOAT)')
-
   def print_report(self):
-    q = self.db_cursor.execute('SELECT * FROM targets')
-    data = q.fetchall()
-    data.append(('', 'TOTAL', sum([x[2] for x in data]), sum([x[3] for x in data])))
-    print(tabulate(data, headers=['id', 'Name', 'Base value (€)', 'Target value ($)']))
+    targets = self.db.get_targets()
+    targets.append(('', 'TOTAL', sum([x[2] for x in targets]), sum([x[3] for x in targets])))
+    print(tabulate(targets, headers=['id', 'Name', 'Base value (€)', 'Target value ($)']))
 
   def run(self):
-
+    # run all given commands
     for opt, arg in self.opts:
       if opt in ['-h', '--help']:
         print('main.py <-h --help> <-p --print> <-a --add> name value')
@@ -115,9 +162,7 @@ class ProfitTargetCalculator:
         print(self.calculate_target(float(self.args[0]), float(self.args[1])))
 
       elif opt in ['-r', '--reset']:
-        self.db_cursor.execute('DROP TABLE targets')
-        self.db_connection.commit()
-        self.create_target_table()
+        self.db.reset()
 
       elif opt in ['-i', '--info']:
         print('Active coefficients:')
@@ -139,23 +184,17 @@ class ProfitTargetCalculator:
         name = ' '.join(self.args[0:-1])
         base_value = float(self.args[-1])
 
-        today = datetime.date.today()
-        usd_eur = self.get_usd_eur_by_date(today)
+        usd_eur_today = self.db.get_usd_eur_by_date(datetime.date.today())
+
+        if usd_eur_today == None:
+          self.db.update_rates(self.api.get_latest())
+          usd_eur_today = self.db.get_usd_eur_by_date(datetime.date.today())
+
+        usd_eur_today = usd_eur_today[0]
         
-        if not usd_eur:
-          self.update_rates()
-          usd_eur = self.get_usd_eur_by_date(today)
+        target_value = self.calculate_target(base_value, usd_eur_today)
 
-        usd_eur = usd_eur[0]
-        
-        target_value = self.calculate_target(base_value, usd_eur)
-
-        self.db_cursor.execute(
-          'INSERT INTO targets (name,base_value,target_value) VALUES (?,?,?)',
-          (name, base_value, target_value)
-        )
-
-      self.db_connection.commit()
+        self.db.update_targets(name, base_value, target_value)
 
 if __name__ == "__main__":
   ptc = ProfitTargetCalculator(sys.argv[1:])
